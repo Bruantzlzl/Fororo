@@ -221,6 +221,10 @@ nav .dot.on{display:block}
 @keyframes spf{0%{transform:translateY(0);opacity:0}20%{opacity:.9}100%{transform:translateY(70px);opacity:0}}
 .origin{animation:hue 9s linear infinite}
 @keyframes hue{to{filter:hue-rotate(360deg)}}
+/* panneau du bas : le contenu défile à l'intérieur */
+.sheet{max-height:85%}
+#sheetbody{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
+#sheetbody .grid,#sheetbody .recipes{overflow:visible}
 </style>
 </head>
 <body>
