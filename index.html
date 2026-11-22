@@ -1065,7 +1065,7 @@ function drawMarket(){const m=S.market;let h='';
  m.orders.forEach((o,i)=>{const has=S.inv.some(x=>x.p===o.p&&x.t>=o.t);
   h+=`<div class="order" style="--c:${VP[o.t].ui}"><div class="ico">${icon(o.p,o.t)}</div><div class="txt"><b>${o.name}</b><small>${LABEL[o.p]} en <em>${VP[o.t].n}</em> ou mieux</small><span class="gold">${gfmt(Math.round(o.gold*mult()))} 🪙</span></div>
    <div class="obtns"><button class="mini" data-deliver="${i}" ${has?'':'disabled'}>Livrer</button><button class="mini ghost" data-refuse="${i}" aria-label="Refuser la commande">Refuser</button></div></div>`});
- h+=`<div class="next"><span id="nextt"></span><button class="mini ghost" id="demoClient">Client (démo)</button></div></div>`;
+ h+=`<div class="next"><span id="nextt"></span></div></div>`;
  // coffres
  h+=`<div class="card"><h4>🎁 Coffres <button id="rates">Taux de drop</button></h4><div class="chests">${Object.entries(CHESTS).map(([k,c])=>{const own=S.chests[k]||0;
   return `<button class="chest" data-chest="${k}" style="--c:${c.ui}" ${own||S.gold>=chestPrice(k)?'':'disabled'}>${own?`<span class="own">×${own}</span>`:''}${chestIcon(k)}<b>${c.n}</b><small>${own?'Gratuit (gagné)':gfmt(chestPrice(k))+' 🪙'}</small></button>`}).join('')}</div>
@@ -1077,9 +1077,8 @@ function drawMarket(){const m=S.market;let h='';
  if($('elivrer'))$('elivrer').onclick=pickStand;
  document.querySelectorAll('[data-deliver]').forEach(b=>b.onclick=()=>deliverSheet(+b.dataset.deliver));
  document.querySelectorAll('[data-refuse]').forEach(b=>b.onclick=()=>{m.orders.splice(+b.dataset.refuse,1);m.nextAt=Math.max(m.nextAt,Date.now()+10*MIN);save();drawMarket();toast('Commande refusée. Un nouveau client viendra plus tard.')});
- $('demoClient').onclick=()=>{if(m.orders.length>=3)return toast('Carnet plein : livre ou refuse une commande.');m.orders.push(newOrder());save();drawMarket()};
  document.querySelectorAll('[data-chest]').forEach(b=>b.onclick=()=>openChest(b.dataset.chest));
- $('rates').onclick=showRates;$('sell').onclick=sellSheet;}
+ $('rates').onclick=()=>showRates();$('sell').onclick=sellSheet;}
 
 function deliverSheet(i){const o=S.market.orders[i],items=S.inv.map((x,k)=>({...x,k})).filter(x=>x.p===o.p&&x.t>=o.t).sort((a,b)=>a.t-b.t);
  openSheet(`Livrer à ${o.name}`,`${LABEL[o.p]} en ${VP[o.t].n} ou mieux · récompense ${gfmt(Math.round(o.gold*mult()))} 🪙`,
@@ -1097,15 +1096,26 @@ function sellSheet(){let armed=-1;const paint=()=>{const items=S.inv.map((x,k)=>
   $('sheetbody').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const k=+b.dataset.k;if(armed!==k){armed=k;return paint()}
    const x=S.inv.splice(k,1)[0];const g=sellPrice(x.p,x.t);S.gold+=g;armed=-1;save();chips();paint();toast(`${LABEL[x.p]} · ${VP[x.t].n} vendu : +${gfmt(g)} 🪙`)})};
  openSheet('Vendre des pièces','Touche une pièce, puis touche-la encore pour confirmer la vente. Vendre est gratuit.','');paint()}
-function showRates(){const A=unlockedAge(),labs=['Âge actuel','Âge précédent','Âges plus anciens'].slice(0,Math.min(3,A));
- const pct=(c,i)=>{const w=c.w.slice(0,labs.length),s=w.reduce((a,b)=>a+b,0);return Math.round(w[i]/s*100)+' %'};
- const rows=labs.map((l,i)=>`<tr><td>${l}</td>${Object.values(CHESTS).map(c=>`<td>${pct(c,i)}</td>`).join('')}</tr>`).join('');
- const am=Object.keys(MATS).filter(m=>MATS[m].age===A),sw=am.reduce((a,m)=>a+MATS[m].w,0);
- const rows2=am.map(m=>{const R=RARL(MATS[m].w);return `<tr><td>${MATS[m].n}</td><td style="color:${R.col}">${R.n}</td><td>${Math.round(MATS[m].w/sw*100)} %</td></tr>`}).join('');
- openSheet('Taux de drop',"Chaque objet d'un coffre est d'abord tiré dans un Âge, puis un matériau de cet Âge selon sa rareté.",
-  `<div style="padding:0 16px 20px;overflow-x:auto"><table class="droptab"><tr><th>Âge de l'objet</th>${Object.values(CHESTS).map(c=>`<th>${c.n.replace('Coffre ','')}</th>`).join('')}</tr>${rows}
-  <tr><td>Objets</td>${Object.values(CHESTS).map(c=>`<td>${c.items}</td>`).join('')}</tr></table>
-  <h4 class="agehead" style="margin-top:14px">Dans l'${AGES[A-1]}</h4><table class="droptab"><tr><th>Matériau</th><th>Rareté</th><th>Chance</th></tr>${rows2}</table></div>`)}
+// probabilités exactes d'un coffre : chance par objet, chance d'en avoir au moins un, quantités
+function chestOdds(k){const A=unlockedAge(),c=CHESTS[k],w=c.w.slice(0,Math.min(3,A)),sw=w.reduce((a,b)=>a+b,0);
+ const pAge=a=>a===A?w[0]/sw:a===A-1?w[1]/sw:(A>2?w[2]/sw/(A-2):0);
+ const rows=[];for(let a=A;a>=1;a--){const ids=Object.keys(MATS).filter(m=>MATS[m].age===a),tw=ids.reduce((s,m)=>s+MATS[m].w,0),pa=pAge(a);
+  ids.forEach(m=>{const W=MATS[m].w,p=pa*W/tw,q=MATS[m].base?'2 à 5':W>=4?'1 à 3':W>=2?'1 à 2':'1';rows.push({m,a,p,atLeast:1-Math.pow(1-p,c.items),q,pa})})}
+ return rows}
+const pct=x=>x>=.1?Math.round(x*100)+' %':x>=.01?(x*100).toFixed(1).replace('.',',')+' %':x>0?'< 1 %':'—';
+function showRates(k='bois'){const A=unlockedAge(),c=CHESTS[k],rows=chestOdds(k);
+ let h=`<div style="padding:0 16px 20px">
+  <div class="chips2" style="margin-bottom:10px">${Object.entries(CHESTS).map(([kk,cc])=>`<button data-rk="${kk}" style="${kk===k?'border-color:var(--gold);color:var(--gold)':''}">${cc.n.replace('Coffre ','')}</button>`).join('')}</div>
+  <div class="card" style="margin:0 0 10px"><div style="display:flex;gap:12px;align-items:center"><div style="width:70px;flex-shrink:0">${chestIcon(k)}</div><div>
+   <b style="font-size:16px">${c.n}</b><p class="note" style="margin:2px 0 0">Prix : <b style="color:var(--gold)">${gfmt(chestPrice(k))} 🪙</b> · ${c.items} objets par coffre${S.chests[k]?` · tu en as ${S.chests[k]} gagné${S.chests[k]>1?'s':''}`:''}</p>
+   <p class="note" style="margin:2px 0 0">Chaque objet est tiré au hasard, indépendamment des autres.</p></div></div></div>`;
+ for(let a=A;a>=1;a--){const rs=rows.filter(r=>r.a===a);if(!rs[0]||rs[0].pa===0)continue;
+  h+=`<h4 class="agehead">${AGES[a-1]} <span>${pct(rs[0].pa)} des objets</span></h4>
+  <table class="droptab"><tr><th>Matériau</th><th>Par objet</th><th>Au moins 1</th><th>Quantité</th></tr>
+  ${rs.map(r=>{const R=RARL(MATS[r.m].w);return `<tr><td><div style="display:flex;align-items:center;gap:6px"><span style="width:26px;height:22px;flex-shrink:0">${matIcon(r.m)}</span><span>${MATS[r.m].n}<br><small style="color:${R.col}">${R.n}${MATS[r.m].base?' · base':''}</small></span></div></td><td>${pct(r.p)}</td><td><b>${pct(r.atLeast)}</b></td><td>${r.q}</td></tr>`}).join('')}</table>`}
+ h+=`<p class="note" style="margin-top:12px">« Par objet » : chance que chaque objet du coffre soit ce matériau. « Au moins 1 » : chance d'en trouver au minimum un en ouvrant le coffre. Les prix et les matériaux possibles évoluent quand un nouvel Âge est débloqué (actuel : ${AGES[A-1]}).</p></div>`;
+ openSheet('Taux de drop','Choisis un coffre pour voir exactement ce qu\'il peut contenir.',h);
+ document.querySelectorAll('[data-rk]').forEach(b=>b.onclick=()=>showRates(b.dataset.rk))}
 function openChest(k){const c=CHESTS[k];
  if(S.chests[k])S.chests[k]--;else{const pr=chestPrice(k);if(S.gold<pr)return toast("Pas assez d'or");S.gold-=pr}
  const got={};for(let i=0;i<c.items;i++){const[id,q]=rollMat(rollAge(k));got[id]=(got[id]||0)+q}
